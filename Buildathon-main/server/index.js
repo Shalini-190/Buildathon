@@ -6,14 +6,11 @@ import { fileURLToPath } from "url";
 const app = express();
 app.use(express.json({ limit: "20mb" }));
 
-// Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ Serve React build
 app.use(express.static(path.join(__dirname, "../dist")));
 
-// ✅ API route
 app.post("/api/gemini", async (req, res) => {
   try {
     const { type, data } = req.body;
@@ -25,9 +22,7 @@ app.post("/api/gemini", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            { parts: [{ text: JSON.stringify({ type, data }) }] }
-          ]
+          contents: [{ parts: [{ text: JSON.stringify({ type, data }) }] }]
         })
       }
     );
@@ -39,12 +34,9 @@ app.post("/api/gemini", async (req, res) => {
   }
 });
 
-// SPA fallback
-// SPA fallback (SAFE for Express v5)
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, "../dist/index.html"));
 });
-
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {

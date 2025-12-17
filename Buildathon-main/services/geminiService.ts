@@ -4,6 +4,7 @@ export async function generateContentFromVideo(videoData: any) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "video", data: videoData })
   });
+
   if (!res.ok) throw new Error("Gemini backend failed");
   return res.json();
 }
@@ -14,6 +15,7 @@ export async function generateAudioPodcast(audioData: any) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "audio", data: audioData })
   });
+
   if (!res.ok) throw new Error("Gemini backend failed");
   return res.json();
 }

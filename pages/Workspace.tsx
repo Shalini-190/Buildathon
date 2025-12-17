@@ -42,6 +42,7 @@ export const Workspace = ({ user, mode, onBack }: WorkspaceProps) => {
     isProcessing: false,
     isGeneratingAudio: false,
     error: null,
+    currentStep: 1
   });
 
   const [activeTab, setActiveTab] = useState<'upload' | 'youtube'>('upload');

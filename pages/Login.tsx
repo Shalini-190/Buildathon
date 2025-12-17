@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SparklesIcon } from '../components/Icons';
+import { SparklesIcon, ClipVerbLogo } from '../components/Icons';
 import { loginUser } from '../services/authService';
 import { User } from '../types';
 
@@ -30,8 +30,8 @@ export const Login = ({ onSuccess, onSwitchToSignup }: LoginProps) => {
 
       <div className="relative z-10 w-full max-w-md px-6">
         <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-6 shadow-2xl shadow-indigo-500/20">
-                 <span className="font-bold text-white text-3xl">C</span>
+            <div className="inline-block mb-6">
+               <ClipVerbLogo className="w-24 h-24 drop-shadow-2xl" />
             </div>
             <h1 className="text-4xl font-bold text-white mb-2">ClipVerb</h1>
             <p className="text-slate-400">Enterprise Intelligence Login</p>

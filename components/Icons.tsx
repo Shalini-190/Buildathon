@@ -1,5 +1,33 @@
 import React from 'react';
 
+export const ClipVerbLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <defs>
+      <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#6366f1" /> {/* Indigo-500 */}
+        <stop offset="100%" stopColor="#ec4899" /> {/* Pink-500 */}
+      </linearGradient>
+    </defs>
+    {/* Background Container */}
+    <rect x="2" y="2" width="36" height="36" rx="10" fill="url(#logo-gradient)" fillOpacity="0.15" stroke="url(#logo-gradient)" strokeWidth="0" />
+    
+    {/* Abstract Play Button converting to Lines */}
+    <path 
+      d="M12 12C12 10.8954 12.8954 10 14 10H26C27.1046 10 28 10.8954 28 12V28C28 29.1046 27.1046 30 26 30H14C12.8954 30 12 29.1046 12 28V12Z" 
+      fill="url(#logo-gradient)" 
+      fillOpacity="0.9"
+    />
+    <path 
+        d="M17 17L24 20.5L17 24V17Z" 
+        fill="white"
+    />
+    {/* Decorative Elements (Text Lines implied) */}
+    <path d="M30 14H34" stroke="url(#logo-gradient)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M30 20H36" stroke="url(#logo-gradient)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M30 26H34" stroke="url(#logo-gradient)" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
 export const UploadIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>

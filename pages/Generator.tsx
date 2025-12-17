@@ -30,6 +30,7 @@ export const Generator = ({ user }: GeneratorProps) => {
     isProcessing: false,
     isGeneratingAudio: false,
     error: null,
+    currentStep: 1
   });
 
   const [activeTab, setActiveTab] = useState<'upload' | 'youtube'>('upload');

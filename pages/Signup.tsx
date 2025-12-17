@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SparklesIcon } from '../components/Icons';
+import { SparklesIcon, ClipVerbLogo } from '../components/Icons';
 import { registerUser } from '../services/authService';
 import { User } from '../types';
 
@@ -17,6 +17,7 @@ export const Signup = ({ onSuccess, onSwitchToLogin }: SignupProps) => {
     confirmPassword: ''
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,13 +29,27 @@ export const Signup = ({ onSuccess, onSwitchToLogin }: SignupProps) => {
     }
 
     try {
-      // agencyName is now optional in the service call
       const user = registerUser(formData.name, formData.email, formData.password, formData.agencyName);
-      onSuccess(user);
+      setSuccess(true);
+      setTimeout(() => {
+          onSuccess(user);
+      }, 1500);
     } catch (err: any) {
       setError(err.message);
     }
   };
+
+  if (success) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B0F19]">
+              <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mb-6 animate-bounce">
+                  <SparklesIcon className="w-10 h-10 text-green-400" />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">Account Created!</h2>
+              <p className="text-slate-400">Redirecting to login...</p>
+          </div>
+      )
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-[#0B0F19]">
@@ -42,6 +57,7 @@ export const Signup = ({ onSuccess, onSwitchToLogin }: SignupProps) => {
       
       <div className="relative z-10 w-full max-w-md px-6">
         <div className="text-center mb-8">
+            <ClipVerbLogo className="w-16 h-16 mx-auto mb-6" />
             <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
             <p className="text-slate-400">Join ClipVerb Enterprise</p>
         </div>

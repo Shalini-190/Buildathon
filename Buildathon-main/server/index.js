@@ -40,9 +40,11 @@ app.post("/api/gemini", async (req, res) => {
 });
 
 // SPA fallback
-app.get("/*", (req, res) => {
+// SPA fallback (SAFE for Express v5)
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, "../dist/index.html"));
 });
+
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {

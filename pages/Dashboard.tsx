@@ -2,42 +2,27 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { jsPDF } from "jspdf";
 import ReactMarkdown from 'react-markdown';
-import { AppState, ContentType, Language, Persona, Template, UserSession } from '../types';
+import { AppState, ContentType, Language, Persona, Template, UserSession, SocialPlatform } from '../types';
 import { generateContentFromVideo, generateAudioPodcast } from '../services/geminiService';
 import { UploadIcon, YoutubeIcon, FileTextIcon, DownloadIcon, SparklesIcon, GlobeIcon, UserIcon, SpeakerIcon, CopyIcon, CheckCircleIcon } from '../components/Icons';
 import { ProcessingOverlay } from '../components/ProcessingOverlay';
+import { SocialPostModal } from '../components/SocialPostModal';
 
 const MAX_FILE_SIZE_MB = 20;
-const STORAGE_KEY = 'clipverb_config';
-const TOTAL_STEPS = 5;
 
-interface DashboardProps {
-    user: UserSession;
-}
-
-export const Dashboard = ({ user }: DashboardProps) => {
+export const Dashboard = ({ user }: { user: UserSession }) => {
   const [state, setState] = useState<AppState>({
-    file: null,
-    youtubeUrl: '',
-    contentType: ContentType.BLOG_POST,
-    language: Language.ENGLISH,
-    persona: Persona.DEFAULT,
-    template: Template.NONE,
-    researchMode: 'strict', // Default to strict for lowest latency
-    timestamps: { enabled: false, start: '00:00:00', end: '00:10:00' },
+    file: null, youtubeUrl: '', contentType: ContentType.BLOG_POST,
+    language: Language.ENGLISH, persona: Persona.DEFAULT, template: Template.NONE,
+    researchMode: 'strict', timestamps: { enabled: false, start: '00:00:00', end: '00:10:00' },
     agency: { name: user?.user?.agencyName || '', clientName: '', logo: null },
-    generatedContent: '',
-    audioUrl: null,
-    sources: [],
-    isProcessing: false,
-    isGeneratingAudio: false,
-    error: null,
-    currentStep: 1
+    generatedContent: '', audioUrl: null, sources: [], isProcessing: false,
+    isGeneratingAudio: false, error: null, currentStep: 1
   });
 
   const [activeTab, setActiveTab] = useState<'upload' | 'youtube'>('upload');
   const [showOverlay, setShowOverlay] = useState(false);
-  const [processingStage, setProcessingStage] = useState('Initializing...');
+  const [socialModal, setSocialModal] = useState<{isOpen: boolean, platform: SocialPlatform}>({ isOpen: false, platform: 'LinkedIn' });
   const [showToast, setShowToast] = useState<{message: string, visible: boolean}>({ message: '', visible: false });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,215 +36,140 @@ export const Dashboard = ({ user }: DashboardProps) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        setState(s => ({ ...s, file: null, error: `File size exceeds ${MAX_FILE_SIZE_MB}MB.` }));
-        return;
-      }
+      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) { triggerToast("File too large"); return; }
       setState(s => ({ ...s, file, error: null }));
     }
   };
 
-  const handleSubmit = async () => {
-    setState(s => ({ ...s, isProcessing: true, error: null, generatedContent: '', audioUrl: null, sources: [] }));
-    setShowOverlay(true);
-    setProcessingStage("Warming up engine...");
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onloadend = () => setState(s => ({ ...s, agency: { ...s.agency, logo: reader.result as string } }));
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
 
+  const handleSubmit = async () => {
+    setState(s => ({ ...s, isProcessing: true, error: null, generatedContent: '', audioUrl: null }));
+    setShowOverlay(true);
     try {
-      let hasSwitchedToResult = false;
-      const result = await generateContentFromVideo(state, (partialText) => {
-         if (!hasSwitchedToResult) {
-             setShowOverlay(false);
-             setState(s => ({ ...s, currentStep: 5 })); 
-             hasSwitchedToResult = true;
-         }
-         setState(s => ({ ...s, generatedContent: partialText }));
+      let hasStarted = false;
+      const result = await generateContentFromVideo(state, (text) => {
+         if (!hasStarted) { setShowOverlay(false); setState(s => ({ ...s, currentStep: 5 })); hasStarted = true; }
+         setState(s => ({ ...s, generatedContent: text }));
       });
-      
-      setState(s => ({ ...s, sources: result.sources, isProcessing: false, currentStep: 5 }));
-      setShowOverlay(false);
+      setState(s => ({ ...s, sources: result.sources, isProcessing: false }));
     } catch (err: any) {
       setState(s => ({ ...s, isProcessing: false, error: err.message }));
       setShowOverlay(false);
     }
   };
 
-  const handleGenerateAudio = async () => {
-    if (!state.generatedContent) return;
-    setState(s => ({ ...s, isGeneratingAudio: true }));
-    try {
-        const url = await generateAudioPodcast(state.generatedContent);
-        setState(s => ({ ...s, audioUrl: url, isGeneratingAudio: false }));
-        triggerToast("Fast Audio Generated");
-    } catch (err) {
-        setState(s => ({ ...s, isGeneratingAudio: false, error: "Audio failed." }));
-    }
-  };
-
-  const handleDownloadTxt = () => {
-    const element = document.createElement("a");
-    element.href = URL.createObjectURL(new Blob([state.generatedContent], { type: 'text/plain' }));
-    element.download = `ClipVerb_Output.txt`;
-    element.click();
-    triggerToast("Downloaded TXT");
-  };
-
-  const nextStep = () => {
-      if (state.currentStep === 1) {
-          if (activeTab === 'upload' && !state.file) { setState(s => ({...s, error: "Upload file first"})); return; }
-          if (activeTab === 'youtube' && !state.youtubeUrl) { setState(s => ({...s, error: "Enter URL first"})); return; }
-      }
-      if (state.currentStep === 4) handleSubmit();
-      else setState(s => ({ ...s, currentStep: s.currentStep + 1 }));
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    if (state.agency.name) doc.text(state.agency.name, 20, 20);
+    else doc.text("ClipVerb Report", 20, 20);
+    doc.setFontSize(12);
+    const splitText = doc.splitTextToSize(state.generatedContent.replace(/[#*]/g, ''), 170);
+    doc.text(splitText, 20, 40);
+    doc.save("Report.pdf");
+    triggerToast("PDF Saved");
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-5xl pt-24 pb-24 md:pb-8">
-      {showOverlay && <ProcessingOverlay message={processingStage} />}
+    <div className="container mx-auto px-4 py-8 max-w-6xl pt-24 pb-24 md:pb-8">
+      {showOverlay && <ProcessingOverlay message="Neural Processing Active..." />}
+      <SocialPostModal isOpen={socialModal.isOpen} onClose={() => setSocialModal(s => ({...s, isOpen: false}))} platform={socialModal.platform} content={state.generatedContent} />
       
       {showToast.visible && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xl text-white px-8 py-4 rounded-full shadow-2xl border border-white/10 flex items-center gap-4 z-50 animate-fadeIn ring-1 ring-white/20">
-           <CheckCircleIcon className="w-4 h-4 text-green-500"/>
-           <span className="font-medium text-sm tracking-wide">{showToast.message}</span>
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-fadeIn flex items-center gap-3">
+           <CheckCircleIcon className="w-4 h-4 text-green-500"/> {showToast.message}
         </div>
       )}
 
-      {/* Progress Bar */}
-      <div className="mb-10 max-w-3xl mx-auto">
-         <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-2">
-             <span className={state.currentStep >= 1 ? "text-indigo-400" : ""}>Source</span>
-             <span className={state.currentStep >= 2 ? "text-indigo-400" : ""}>Scope</span>
-             <span className={state.currentStep >= 3 ? "text-indigo-400" : ""}>Intelligence</span>
-             <span className={state.currentStep >= 4 ? "text-indigo-400" : ""}>Branding</span>
-             <span className={state.currentStep >= 5 ? "text-indigo-400" : ""}>Result</span>
-         </div>
-         <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-             <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all duration-500" style={{width: `${(state.currentStep / TOTAL_STEPS) * 100}%`}}></div>
-         </div>
-      </div>
-
-      <div className="gradient-border-wrapper">
-          <div className="gradient-border-content p-8 md:p-12 min-h-[500px] flex flex-col relative overflow-hidden">
-              <div className="flex-1">
-                {state.currentStep === 1 && (
-                    <div className="space-y-8 animate-fadeIn">
-                        <div className="text-center">
-                            <h2 className="text-3xl font-bold text-white mb-2">Video Source</h2>
-                            <p className="text-slate-400 text-sm">Select your input method</p>
-                        </div>
-                        <div className="flex p-1 bg-black/40 rounded-xl mb-6">
-                            <button onClick={() => setActiveTab('upload')} className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center space-x-2 transition-all font-medium ${activeTab === 'upload' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
-                                <UploadIcon className="w-4 h-4" /> <span>Upload</span>
-                            </button>
-                            <button onClick={() => setActiveTab('youtube')} className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center space-x-2 transition-all font-medium ${activeTab === 'youtube' ? 'bg-pink-600 text-white' : 'text-slate-400'}`}>
-                                <YoutubeIcon className="w-4 h-4" /> <span>YouTube</span>
-                            </button>
-                        </div>
-                        {activeTab === 'upload' ? (
-                            <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-700 bg-slate-900/30 rounded-3xl p-10 text-center hover:border-indigo-500 transition-all cursor-pointer group">
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="video/*"/>
-                                <UploadIcon className="w-10 h-10 text-indigo-400 mx-auto mb-4" />
-                                <p className="text-white font-medium">{state.file ? state.file.name : "Select Video File"}</p>
-                            </div>
-                        ) : (
-                            <input type="text" placeholder="Paste YouTube URL" value={state.youtubeUrl} onChange={(e) => setState(s => ({...s, youtubeUrl: e.target.value}))} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-6 py-5 text-white focus:border-red-500 outline-none" />
-                        )}
-                    </div>
-                )}
-                {state.currentStep === 2 && (
-                    <div className="space-y-8 animate-fadeIn">
-                        <div className="text-center">
-                            <h2 className="text-3xl font-bold text-white mb-2">Mode & Scope</h2>
-                            <p className="text-slate-400 text-sm">Strict mode is optimized for speed.</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <button onClick={() => setState(s => ({...s, researchMode: 'strict'}))} className={`p-6 rounded-2xl border transition-all text-left ${state.researchMode === 'strict' ? 'bg-indigo-900/30 border-indigo-500' : 'bg-slate-900/50 border-slate-800'}`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="font-bold text-white">Strict Mode</div>
-                                    <span className="text-[9px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-black">FAST</span>
-                                </div>
-                                <div className="text-xs text-slate-400">Instant processing. Zero search latency.</div>
-                            </button>
-                            <button onClick={() => setState(s => ({...s, researchMode: 'enhanced'}))} className={`p-6 rounded-2xl border transition-all text-left ${state.researchMode === 'enhanced' ? 'bg-pink-900/30 border-pink-500' : 'bg-slate-900/50 border-slate-800'}`}>
-                                <div className="font-bold text-white mb-2">Enhanced Mode</div>
-                                <div className="text-xs text-slate-400">Deep search active. Higher latency.</div>
-                            </button>
-                        </div>
-                    </div>
-                )}
-                {state.currentStep === 3 && (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="text-center mb-8">
-                            <h2 className="text-3xl font-bold text-white mb-2">Intelligence</h2>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Format</label>
-                                <select value={state.contentType} onChange={(e) => setState(s => ({ ...s, contentType: e.target.value as ContentType }))} className="glass-input w-full rounded-xl px-4 py-3 text-sm">
-                                    {Object.values(ContentType).map(t => <option key={t} value={t} className="bg-slate-900">{t}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Language</label>
-                                <select value={state.language} onChange={(e) => setState(s => ({ ...s, language: e.target.value as Language }))} className="glass-input w-full rounded-xl px-4 py-3 text-sm">
-                                    {Object.values(Language).map(l => <option key={l} value={l} className="bg-slate-900">{l}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {state.currentStep === 4 && (
-                    <div className="space-y-8 animate-fadeIn text-center">
-                        <h2 className="text-3xl font-bold text-white mb-2">Final Review</h2>
-                        <div className="bg-white/5 p-6 rounded-3xl border border-white/5 inline-block text-left min-w-[300px]">
-                            <p className="text-xs text-slate-400 uppercase font-bold mb-1">Config Summary</p>
-                            <p className="text-lg font-bold text-indigo-300">{state.contentType}</p>
-                            <p className="text-sm text-slate-300">{state.language} • {state.persona}</p>
-                            <div className="mt-4 flex items-center gap-2 text-[10px] text-green-400 font-bold bg-green-500/10 px-3 py-1.5 rounded-full w-fit">
-                                <SparklesIcon className="w-3 h-3"/> LOW LATENCY MODE ACTIVE
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {state.currentStep === 5 && (
-                    <div className="h-full flex flex-col animate-fadeIn">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2"><CheckCircleIcon className="w-5 h-5 text-green-500"/> Generated Intelligence</h2>
-                            <button onClick={handleDownloadTxt} className="p-2.5 bg-indigo-600 rounded-xl hover:bg-indigo-500 transition-all"><DownloadIcon className="w-4 h-4 text-white"/></button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/30 rounded-2xl p-6 border border-white/5 mb-6 min-h-[300px]">
-                            <div className="prose prose-invert max-w-none markdown-content">
-                                <ReactMarkdown>{state.generatedContent}</ReactMarkdown>
-                            </div>
-                        </div>
-                        <div className="p-4 bg-gradient-to-r from-indigo-900/40 to-pink-900/40 rounded-2xl border border-white/10 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <SpeakerIcon className="w-4 h-4 text-pink-400" />
-                                <span className="text-xs font-bold text-white">AI Audio Preview</span>
-                            </div>
-                            {state.audioUrl ? (
-                                <audio controls src={state.audioUrl} className="h-8 w-40 opacity-80" />
-                            ) : (
-                                <button onClick={handleGenerateAudio} disabled={state.isGeneratingAudio} className="px-4 py-1.5 bg-white text-black text-[10px] font-black rounded-full hover:bg-slate-200 disabled:opacity-50">
-                                    {state.isGeneratingAudio ? "GEN..." : "QUICK AUDIO"}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-              </div>
-              
-              <div className="mt-8 pt-8 border-t border-white/5 flex justify-between">
-                  {state.currentStep > 1 && state.currentStep < 5 ? (
-                      <button onClick={() => setState(s => ({ ...s, currentStep: s.currentStep - 1 }))} className="px-8 py-3 rounded-full font-bold text-slate-400">Back</button>
-                  ) : <div></div>}
-                  {state.currentStep < 4 ? (
-                      <button onClick={nextStep} className="btn-secondary px-10 py-3 rounded-full font-bold">Next</button>
-                  ) : state.currentStep === 4 ? (
-                      <button onClick={nextStep} className="btn-gradient px-12 py-4 rounded-full font-bold flex items-center gap-3 shadow-2xl">
-                        <SparklesIcon className="w-5 h-5"/> Generate Now
-                      </button>
+      {/* Main Content Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Controls */}
+          <div className="lg:col-span-5 space-y-6">
+              <div className="glass-panel p-6 rounded-3xl space-y-6">
+                  <div className="flex p-1 bg-white/5 rounded-xl">
+                      <button onClick={() => setActiveTab('upload')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'upload' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Upload</button>
+                      <button onClick={() => setActiveTab('youtube')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'youtube' ? 'bg-red-600 text-white' : 'text-slate-400'}`}>YouTube</button>
+                  </div>
+                  
+                  {activeTab === 'upload' ? (
+                      <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-700 rounded-2xl p-8 text-center hover:border-indigo-500 cursor-pointer group">
+                          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="video/*" />
+                          <UploadIcon className="w-10 h-10 text-slate-500 mx-auto mb-2 group-hover:text-indigo-400" />
+                          <p className="text-xs text-slate-400 font-medium">{state.file ? state.file.name : "Choose Video"}</p>
+                      </div>
                   ) : (
-                      <button onClick={() => setState(s => ({...s, currentStep: 1, generatedContent: '', audioUrl: null}))} className="px-8 py-3 rounded-full font-bold text-indigo-300">New Project</button>
+                      <input type="text" placeholder="YouTube URL" value={state.youtubeUrl} onChange={e => setState(s => ({...s, youtubeUrl: e.target.value}))} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm" />
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                      <select value={state.contentType} onChange={e => setState(s => ({...s, contentType: e.target.value as ContentType}))} className="bg-slate-800 rounded-xl px-3 py-2 text-xs">
+                          {Object.values(ContentType).map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <select value={state.language} onChange={e => setState(s => ({...s, language: e.target.value as Language}))} className="bg-slate-800 rounded-xl px-3 py-2 text-xs">
+                          {Object.values(Language).map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                  </div>
+
+                  <div className="space-y-4 pt-4 border-t border-white/5">
+                      <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Agency Branding</h3>
+                      <input type="text" placeholder="Client Name" value={state.agency.clientName} onChange={e => setState(s => ({...s, agency: {...s.agency, clientName: e.target.value}}))} className="w-full bg-slate-800/50 rounded-xl px-4 py-2 text-xs" />
+                      <div className="flex items-center gap-3">
+                          <button onClick={() => logoInputRef.current?.click()} className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center border border-white/5">
+                              {state.agency.logo ? <img src={state.agency.logo} className="w-6 h-6 object-contain" /> : <UploadIcon className="w-4 h-4 text-slate-500" />}
+                          </button>
+                          <span className="text-[10px] text-slate-400">Upload Report Logo</span>
+                          <input type="file" ref={logoInputRef} onChange={handleLogoUpload} className="hidden" />
+                      </div>
+                  </div>
+
+                  <button onClick={handleSubmit} disabled={state.isProcessing} className="w-full btn-gradient py-4 rounded-2xl font-bold flex items-center justify-center gap-2">
+                      <SparklesIcon className="w-5 h-5"/> {state.isProcessing ? "Processing..." : "Generate Intel"}
+                  </button>
+              </div>
+          </div>
+
+          {/* Results */}
+          <div className="lg:col-span-7">
+              <div className="glass-panel h-full min-h-[600px] rounded-3xl p-8 flex flex-col">
+                  {state.generatedContent ? (
+                      <>
+                          <div className="flex items-center justify-between mb-6 pb-6 border-b border-white/5">
+                              <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileTextIcon className="w-5 h-5 text-indigo-400"/> Output</h2>
+                              <div className="flex gap-2">
+                                  <button onClick={() => setSocialModal({isOpen: true, platform: 'LinkedIn'})} className="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/20"><CopyIcon className="w-4 h-4"/></button>
+                                  <button onClick={handleDownloadPdf} className="p-2 bg-pink-600 rounded-lg text-white shadow-lg"><DownloadIcon className="w-4 h-4"/></button>
+                              </div>
+                          </div>
+                          <div className="flex-1 overflow-y-auto custom-scrollbar pr-4">
+                              <div className="prose prose-invert max-w-none markdown-content">
+                                  <ReactMarkdown>{state.generatedContent}</ReactMarkdown>
+                              </div>
+                          </div>
+                          <div className="mt-8 p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                  <SpeakerIcon className="w-4 h-4 text-pink-400" />
+                                  <span className="text-xs font-bold">Neural Podcast Preview</span>
+                              </div>
+                              {state.audioUrl ? <audio controls src={state.audioUrl} className="h-8 w-48" /> : 
+                              <button onClick={async () => { 
+                                  setState(s => ({...s, isGeneratingAudio: true})); 
+                                  const url = await generateAudioPodcast(state.generatedContent); 
+                                  setState(s => ({...s, audioUrl: url, isGeneratingAudio: false})); 
+                              }} className="px-4 py-1.5 bg-white text-black text-[10px] font-black rounded-full">GENERATE AUDIO</button>}
+                          </div>
+                      </>
+                  ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4 opacity-50">
+                          <SparklesIcon className="w-16 h-16"/>
+                          <p className="font-medium tracking-wide">Enter video details to begin</p>
+                      </div>
                   )}
               </div>
           </div>

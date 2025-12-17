@@ -39,8 +39,8 @@ app.post("/api/gemini", async (req, res) => {
   }
 });
 
-// ✅ SPA fallback (THIS IS WHAT FIXES "Cannot GET /")
-app.get("*", (req, res) => {
+// SPA fallback
+app.get("/*", (req, res) => {
   res.sendFile(path.join(__dirname, "../dist/index.html"));
 });
 

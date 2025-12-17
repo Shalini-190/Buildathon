@@ -6,4 +6,4 @@ services:
     staticPublishPath: dist
     envVars:
       - key: API_KEY
-        sync: false
+        sync: false # Tells Render not to sync this to other services for security

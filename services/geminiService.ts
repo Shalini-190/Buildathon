@@ -28,8 +28,6 @@ const extractVideoId = (url: string): string | null => {
 // Helper to fetch YouTube Metadata
 const fetchYoutubeMetadata = async (url: string): Promise<{ title: string; author: string } | null> => {
   const controller = new AbortController();
-  // LATENCY OPTIMIZATION: Reduced timeout from 1500ms to 800ms. 
-  // If noembed is slow, we skip it and let Gemini handle the title lookup via Google Search.
   const timeoutId = setTimeout(() => controller.abort(), 800); 
 
   try {
@@ -61,7 +59,6 @@ export const generateContentFromVideo = async (
   
   // --- PROMPT CONSTRUCTION ---
   
-  // 1. Role & Persona
   let basePrompt = `
   ROLE: You are ClipVerb, an elite Video Content Intelligence Engine.
   CURRENT PERSONA: ${state.persona}.
@@ -81,7 +78,6 @@ export const generateContentFromVideo = async (
   - Do NOT add a fake signature at the end.
   `;
 
-  // 2. Templates
   if (state.template !== Template.NONE) {
     basePrompt += `
     STRICT STRUCTURE TEMPLATE: ${state.template}
@@ -89,7 +85,6 @@ export const generateContentFromVideo = async (
     `;
   }
 
-  // 3. Content Type Specifics
   if (state.contentType === ContentType.CLIENT_REPORT) {
     basePrompt += `
     FORMAT: EXECUTIVE CLIENT REPORT
@@ -126,7 +121,6 @@ export const generateContentFromVideo = async (
       `;
   }
 
-  // 4. Timestamps
   if (state.timestamps.enabled && state.timestamps.start && state.timestamps.end) {
     basePrompt += `
     CRITICAL: Focus analysis ONLY on the segment from ${state.timestamps.start} to ${state.timestamps.end}.
@@ -134,7 +128,6 @@ export const generateContentFromVideo = async (
     `;
   }
 
-  // 5. Agency & Client Branding
   if (state.agency.name) {
     basePrompt += `
     BRANDING CONTEXT:
@@ -152,7 +145,7 @@ export const generateContentFromVideo = async (
   try {
     const generationConfig: any = {
       thinkingConfig: { thinkingBudget: 0 },
-      temperature: 0.7, // Creativity balance
+      temperature: 0.7,
     };
 
     let streamResult;
@@ -170,7 +163,7 @@ export const generateContentFromVideo = async (
       }
       
       streamResult = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         contents: { parts },
         config: generationConfig
       });
@@ -180,9 +173,6 @@ export const generateContentFromVideo = async (
        const videoTitle = metadata?.title || "Unknown Video";
        const videoAuthor = metadata?.author || "Unknown Channel";
 
-       // We force 'enhanced' search behavior for YouTube to ensure we find the transcript/context
-       // regardless of the user's research setting, but we instruct the model on how to USE that info.
-       
        const searchPrompt = `
        ${basePrompt}
 
@@ -190,28 +180,20 @@ export const generateContentFromVideo = async (
        URL: ${state.youtubeUrl}
 
        SYSTEM INSTRUCTION:
-       1. You are simulating a "Video Downloader & Context Extractor".
-       2. Use the 'googleSearch' tool to find the TRANSCRIPT, CAPTIONS, REVIEW SUMMARIES, and DESCRIPTION of this specific video.
-       3. Reconstruct the full video narrative from these sources.
-       4. EXTRACT the key points, arguments, and specific details.
+       1. Use the 'googleSearch' tool to find context about this specific video.
+       2. Reconstruct the narrative and extract key points.
        
        ${state.researchMode === 'strict' 
-          ? "CONSTRAINT: Use the search results ONLY to reconstruct the video content. Do not add external opinions." 
-          : "ENHANCEMENT: You may also search for related topics to add depth and context to the report."}
-
-       MANDATORY RULES:
-       - DO NOT say "I cannot watch the video".
-       - DO NOT say "I cannot access the transcript".
-       - If a direct transcript is missing, you MUST synthesize a detailed report based on the extensive search results about this video's topic and title.
-       - Act as if you have processed the video file directly.
+          ? "CONSTRAINT: Use the search results ONLY to reconstruct the video content." 
+          : "ENHANCEMENT: You may search for related topics to add depth."}
        `;
 
        streamResult = await ai.models.generateContentStream({
-         model: 'gemini-2.5-flash',
+         model: 'gemini-3-flash-preview',
          contents: { text: searchPrompt },
          config: {
            ...generationConfig,
-           tools: [{ googleSearch: {} }] // Always enable search for YouTube to "download" context
+           tools: [{ googleSearch: {} }] 
          }
        });
 
@@ -222,7 +204,6 @@ export const generateContentFromVideo = async (
       throw new Error("No video source provided.");
     }
 
-    // Process Stream
     let accumulatedText = '';
     const uniqueUrls = new Set<string>();
     finalSources.forEach(s => uniqueUrls.add(s.url));
@@ -256,27 +237,20 @@ export const generateContentFromVideo = async (
   }
 };
 
-// AUDIO GENERATION SERVICE
 export const generateAudioPodcast = async (text: string): Promise<string> => {
     if (!process.env.API_KEY) throw new Error("API Key missing");
-    
-    // LATENCY OPTIMIZATION: 
-    // 1. Truncate text: Sending 10k chars takes time. We limit to ~2000 for a "Quick Summary" feel.
-    // 2. We could ask the model to summarize it first, but that adds a round trip.
-    // We will just slice it safely.
     const safeText = text.substring(0, 2000); 
-    
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     try {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: safeText }] }],
+            contents: [{ parts: [{ text: `Say cheerfully and professionally: ${safeText}` }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Kore' }, // Professional voice
+                        prebuiltVoiceConfig: { voiceName: 'Kore' }, 
                     },
                 },
             },
@@ -293,14 +267,12 @@ export const generateAudioPodcast = async (text: string): Promise<string> => {
         }
         
         return createWavUrl(bytes);
-
     } catch (e) {
         console.error("Audio Gen Error", e);
         throw e;
     }
 }
 
-// Helper to add WAV header to raw PCM (1 channel, 24kHz usually for Gemini)
 const createWavUrl = (pcmData: Uint8Array): string => {
     const numChannels = 1;
     const sampleRate = 24000; 
